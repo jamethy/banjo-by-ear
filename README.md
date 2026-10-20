@@ -11,7 +11,47 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. No account, API key, or backend is needed. `npm run build` produces a static site in `dist/`; `npm run preview` serves that build.
+Open the local URL printed by Vite. Signed-out practice works without configuration. `npm run build` produces a static site in `dist/`; `npm run preview` serves that build. Optional Google sign-in and cloud saving use Firebase Authentication and Cloud Firestore directly from the browser.
+
+## Google sign-in and Firebase setup
+
+1. Create a Firebase project in the [Firebase console](https://console.firebase.google.com/) or use an existing one. This integration needs Authentication and Firestore only; it does not require Firebase Storage, Cloud Functions, or a billing upgrade. You can start on the Spark plan.
+2. Register a **Web app** under Project settings → Your apps. Firebase Hosting is optional; this site can still live on S3.
+3. Copy `.env.example` to `.env.local` and fill in the web app's `apiKey`, `authDomain`, `projectId`, and `appId` values. These public client identifiers are embedded into the built site. Never put service account keys, private keys, or AWS credentials in a `VITE_` variable.
+4. Under **Authentication → Sign-in method**, enable **Google** and select the support email. Under **Authentication → Settings → Authorized domains**, add `localhost`, `127.0.0.1` if used, and your actual deployed hostname (without a protocol or path). Use HTTPS for the deployed app, for example CloudFront in front of S3.
+5. Create the **default Cloud Firestore database**, Standard edition, in production mode. Choose a suitable region. Publish the contents of **`firestore.rules`** in its Rules tab, or use the CLI commands below after checking the target project ID:
+
+   ```sh
+   npx firebase login
+   npx firebase deploy --only firestore:rules --project YOUR_PROJECT_ID
+   ```
+
+6. Restart the dev server after changing `.env.local`. For deployment, run `npm run build` with the real configuration present and upload `dist/`. Environment variables are build-time values; changing S3 settings alone will not change Firebase configuration.
+
+These steps follow Firebase's [Google sign-in documentation](https://firebase.google.com/docs/auth/web/google-signin) and [Firestore access rules guidance](https://firebase.google.com/docs/firestore/security/rules-conditions). Missing configuration leaves local practice available and explains setup when Sign in is opened. Incomplete configuration is reported. Rules deny access unless the authenticated UID owns the document and submitted fields pass validation; the public API key is not the authorization boundary.
+
+After signing in, **My account** shows cloud status and an explicit **Copy local data to this account** action. Signing in alone does not upload guest data. The import copies browser phrases, saved YouTube tunes, and completed scores, skips IDs already in the account, and leaves local originals in place. Account preferences start separately. Imports larger than 400 records use multiple batches; retrying a partially completed import skips already copied records.
+
+The app syncs:
+
+| Data                                                        | Firestore path                     |
+| ----------------------------------------------------------- | ---------------------------------- |
+| Saved loops and their playback settings                     | `users/{uid}/loops/{id}`           |
+| YouTube tunes saved using **Save tune**                     | `users/{uid}/links/{videoId}`      |
+| Completed ear-training rounds                               | `users/{uid}/scores/{id}`          |
+| Speed, repeat gap, focus, volume, looping, and game options | `users/{uid}/settings/preferences` |
+
+Each record is saved separately, so adding a phrase on one device does not overwrite another device's collection. Settings updates merge changed fields and are debounced to avoid a write for every slider movement. Completed scores are personal practice records, not a tamper-proof leaderboard. Current playback position, unfinished rounds, uploaded audio, and local recording drafts are not synced. Account changes pause playback and reset the practice screen to keep sessions separate. Signing out restores the browser's guest library and preferences.
+
+The cloud cache is memory-only; account records are not copied into guest localStorage or IndexedDB. Firebase remembers the login in the browser, so sign out on a shared device. While offline, cloud changes can remain pending: keep the tab open until **Saved to your account** appears. Signing out waits for pending writes; reconnect first if a save is waiting. Reloading or closing while offline can lose unacknowledged changes. Cloud errors and usage-limit failures are shown in the app; **Retry connection** reloads subscriptions. It does not silently re-create a failed phrase or score.
+
+For local Firebase testing, install Java 21+ and run:
+
+```sh
+npm run test:firebase
+```
+
+This starts Auth and Firestore emulators, validates ownership and field rules, runs browser tests, then stops the test services. Set `CHROMIUM_PATH` to an installed Chromium executable if needed. To explore manually, run `npm run emulators` and, in another terminal, `npm run dev -- --mode emulator`. `.env.emulator` contains only fake `demo-slowfolk` settings; the emulator code is development-only and rejects non-demo project IDs. The test command supplies its own configuration so it never uses a real Firebase project. Do not use emulator mode for a deployment build.
 
 ## Practice controls
 
@@ -19,7 +59,7 @@ Open the local URL printed by Vite. No account, API key, or backend is needed. `
 - Drag across the timeline to select a phrase. Drag A/B, edit their timestamps, or focus a handle and use the arrow keys for 0.1-second adjustments.
 - Set playback to 0.25×, 0.5×, 0.75×, or 1×. Unsupported YouTube rates are disabled. Slowing playback preserves pitch.
 - Set a 0–60 second pause between repeats. Press pause to cancel the countdown.
-- Save phrases with their boundaries, speed, and pause. Phrases stay in this browser's local storage. Practice-room audio uploads are temporary; select the same file to reuse its phrases.
+- Save phrases with their boundaries, speed, and pause. Signed-out phrases stay in this browser; signed-in phrases sync to your account. Use **Save tune** on a loaded YouTube video to keep its link in the saved library. Practice-room audio uploads are temporary; select the same file to reuse its phrases.
 - Keyboard: Space plays/pauses, R returns to A, L toggles looping, `[` sets A, `]` sets B, left/right seek one second, and `?` opens help. Click outside the YouTube iframe before using page shortcuts.
 
 The app starts with an original synthesized G-major plucked-string roll, so the controls can be tried immediately. This is a practice sample, not a recorded banjo performance.
@@ -42,7 +82,7 @@ Rounds have 5, 10, or 20 questions. Listen before choosing an answer, replay fre
 
 This version supports the twelve major keys, their diatonic chords, and their seven scale degrees. Minor keys and chromatic notes are not yet included. The optional tonic reference is a synthesized sine tone in standard A=440 tuning, not a banjo sample.
 
-**Site recordings are permanent assets, not browser uploads.** Clearing browser storage does not remove them. Personal scores and unfinished recording drafts use IndexedDB; the games still play site recordings when browser storage is unavailable.
+**Site recordings are permanent assets, not browser uploads.** Clearing browser storage does not remove them. Signed-out scores and unfinished recording drafts use IndexedDB; signed-in scores use Firestore. The games still play site recordings when browser storage is unavailable.
 
 ## Adding permanent recordings
 
@@ -88,13 +128,13 @@ For single notes, use `"kind": "note"` and `"degree": "1"` through `"7"` instead
 
 ## Hosting on S3
 
-The production site is entirely static. **Deploy the contents of `dist/` together**, including `index.html`, `assets/`, and `recordings/`. There is no Node server, database, write API, or AWS credential needed in the running app. The import script runs on your computer before the build, not in S3. Recording catalog requests and audio playback use files served from the same site.
+The production site is entirely static. **Deploy the contents of `dist/` together**, including `index.html`, `assets/`, and `recordings/`. No custom backend or AWS credential runs in the browser. Optional Firebase Authentication and Firestore provide account services independently of S3. The recording import script runs on your computer before the build, not in S3. Recording catalog requests and audio playback use files served from the same site.
 
 Set the site's index document to `index.html`. Navigation uses React state rather than URL routes, so no SPA route rewrites are required. Catalog responses should use `application/json`; serve audio using its appropriate audio content type. Revalidate `index.html` and `recordings/catalog.json` when deploying changes; content-hashed application and imported audio assets can be cached longer.
 
 S3 supports this static hosting model. For HTTPS, use CloudFront in front of the bucket; S3 website endpoints themselves do not support HTTPS. Hosting setup and deployment are intentionally separate from this app change. See [AWS's S3 static website documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteHosting.html).
 
-Personal scores stay in the visitor's browser; they do not require a backend. Browser-local draft uploads never alter the public site. YouTube playback and Google Fonts still connect to their respective services.
+Personal scores stay in the visitor's browser when signed out and sync with Firebase when signed in. Browser-local draft uploads never alter the public site. YouTube playback and Google Fonts still connect to their respective services.
 
 ## Audio focus and limitations
 
@@ -120,4 +160,4 @@ Set `TEST_URL` if the server uses another port. Set `CHROMIUM_PATH` to use an ex
 
 Browser checks cover actual local audio playback, loop/reply timing, pause cancellation, zero-gap looping, uploads, keyboard selection, saved phrases, mobile overflow, and YouTube control integration using an API fixture. Training checks cover recording import/edit/delete and persistence, hidden answer labels, roll/chord grading, note-name and scale-degree answers, missed-question review, completed-score persistence, and pausing the practice player when entering a game. Static-catalog checks cover playback without browser storage, draft exclusion, audio export, and HTTP-compatible IDs. Unit checks cover major-scale spelling, labels, filters, round balancing, grading, catalog paths, audio extraction, idempotent imports, and missing-file build validation. The YouTube fixture does not verify live YouTube availability.
 
-Built with React, Vite, Web Audio, the YouTube IFrame Player API, and Lucide icons. No server-side state or secrets.
+Built with React, Vite, Web Audio, the YouTube IFrame Player API, Firebase, and Lucide icons. No custom server or embedded secrets.

@@ -9,18 +9,28 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test tests/*.test.js",
     "test:browser": "playwright test",
+    "test:firebase": "firebase emulators:exec --only auth,firestore --project demo-slowfolk 'node --test tests/rules/*.test.js && playwright test --config playwright.firebase.config.js'",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-slowfolk",
     "recordings:import": "node scripts/recordings.mjs import",
     "recordings:check": "node scripts/recordings.mjs check"
   },
   "dependencies": {
+    "firebase": "12.18.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@playwright/test": "^1.55.1",
     "@vitejs/plugin-react": "^5.0.3",
+    "firebase-tools": "^15.34.0",
     "prettier": "^3.9.9",
     "vite": "^7.1.7"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@firebase/app": "0.16.1",
+    "@firebase/app-compat": "0.5.17"
   }
 }

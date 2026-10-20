@@ -1,0 +1,84 @@
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.account-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line, #ddd9cd);
+  border-radius: 24px;
+  padding: 9px 14px;
+  background: #f8f6ee;
+  color: #465441;
+  white-space: nowrap;
+  font: inherit;
+  cursor: pointer;
+}
+.account-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 22px;
+  padding: 12px 16px;
+  background: #eeeee3;
+  border-radius: 10px;
+  color: #465441;
+  font-size: 13px;
+}
+.account-status span {
+  flex: 1;
+}
+.account-dialog p {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.account-dialog h3 {
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+.account-dialog .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.account-import,
+.account-setup {
+  background: #f3f1e8;
+  padding: 18px;
+  border-radius: 10px;
+  margin: 20px 0;
+}
+.saved-tunes {
+  margin-top: 24px;
+}
+.save-tune {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+}
+@media (max-width: 700px) {
+  .topbar-actions {
+    gap: 8px;
+  }
+  .topbar-actions .shortcut-button {
+    display: none;
+  }
+  .account-button {
+    padding: 8px 11px;
+    font-size: 12px;
+  }
+  .account-status {
+    flex-wrap: wrap;
+  }
+  .account-import {
+    padding: 12px;
+  }
+  .account-import button {
+    white-space: normal;
+    text-align: left;
+  }
+}

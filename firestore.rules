@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function text(value, limit) { return value is string && value.size() > 0 && value.size() <= limit; }
+    function range(value, minimum, maximum) { return value is number && value >= minimum && value <= maximum; }
+    function speed(value) { return value in [0.25, 0.5, 0.75, 1]; }
+    match /users/{uid}/loops/{id} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['id','name','sourceKey','kind','title','start','end','speed','gap'])
+        && request.resource.data.keys().hasOnly(['id','name','sourceKey','kind','videoId','title','start','end','speed','gap'])
+        && request.resource.data.id == id && text(id, 128)
+        && text(request.resource.data.name, 200)
+        && text(request.resource.data.sourceKey, 1024)
+        && text(request.resource.data.title, 1000)
+        && request.resource.data.kind in ['demo','file','youtube']
+        && (request.resource.data.kind != 'youtube' || (request.resource.data.videoId is string && request.resource.data.videoId.matches('^[a-zA-Z0-9_-]{11}$')))
+        && (!('videoId' in request.resource.data) || (request.resource.data.videoId is string && request.resource.data.videoId.size() <= 11))
+        && range(request.resource.data.start, 0, 604800)
+        && range(request.resource.data.end, 0, 604800)
+        && request.resource.data.end > request.resource.data.start
+        && speed(request.resource.data.speed) && range(request.resource.data.gap, 0, 60);
+    }
+    match /users/{uid}/links/{id} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['id','title'])
+        && request.resource.data.keys().hasOnly(['id','title'])
+        && request.resource.data.id == id && id.matches('^[a-zA-Z0-9_-]{11}$')
+        && text(request.resource.data.title, 1000);
+    }
+    match /users/{uid}/scores/{id} {
+      allow read, delete: if owner(uid);
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasAll(['id','mode','total','correct','finishedAt'])
+        && request.resource.data.keys().hasOnly(['id','mode','total','correct','finishedAt'])
+        && request.resource.data.id == id && text(id, 128)
+        && request.resource.data.mode in ['rolls','harmony','notes']
+        && request.resource.data.total is int && range(request.resource.data.total, 1, 20)
+        && request.resource.data.correct is int && range(request.resource.data.correct, 0, request.resource.data.total)
+        && request.resource.data.finishedAt is int && request.resource.data.finishedAt > 0;
+      // Re-importing the same completed round is idempotent; scores are personal, not a verified leaderboard.
+      allow update: if owner(uid) && request.resource.data == resource.data;
+    }
+    match /users/{uid}/settings/preferences {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly(['speed','gap','focus','volume','loop','mode','key','tempo','answerStyle','length'])
+        && (!('speed' in request.resource.data) || speed(request.resource.data.speed))
+        && (!('gap' in request.resource.data) || range(request.resource.data.gap, 0, 60))
+        && (!('focus' in request.resource.data) || range(request.resource.data.focus, 0, 100))
+        && (!('volume' in request.resource.data) || range(request.resource.data.volume, 0, 1))
+        && (!('loop' in request.resource.data) || request.resource.data.loop is bool)
+        && (!('mode' in request.resource.data) || request.resource.data.mode in ['rolls','harmony','notes'])
+        && (!('key' in request.resource.data) || request.resource.data.key in ['all','C','D♭','D','E♭','E','F','F♯','G','A♭','A','B♭','B'])
+        && (!('tempo' in request.resource.data) || request.resource.data.tempo in ['all','slow','medium','fast'])
+        && (!('answerStyle' in request.resource.data) || request.resource.data.answerStyle in ['degrees','names'])
+        && (!('length' in request.resource.data) || request.resource.data.length in [5,10,20]);
+    }
+  }
+}

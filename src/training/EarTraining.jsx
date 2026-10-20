@@ -26,7 +26,8 @@ import {
   sampleAnswer,
   SCALES,
 } from "./model";
-import { listRecordings, listRounds, saveRound } from "./storage";
+import { listRecordings } from "./storage";
+import { useAccount, usePreference } from "../account/AccountProvider";
 import useListening from "./useListening";
 import { loadCatalog } from "./catalog";
 
@@ -61,20 +62,21 @@ function AnswerChoices({ legend, options, value, onChange, disabled }) {
 }
 
 export default function EarTraining() {
+  const account = useAccount();
+  const history = account.scores;
   const [tab, setTab] = useState("play"),
     [drafts, setDrafts] = useState([]),
     [published, setPublished] = useState([]),
     [previewDrafts, setPreviewDrafts] = useState(false),
-    [localError, setLocalError] = useState(""),
-    [history, setHistory] = useState([]);
+    [localError, setLocalError] = useState("");
   const [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState(""),
     [reload, setReload] = useState(0);
-  const [mode, setMode] = useState("rolls"),
-    [key, setKey] = useState("all"),
-    [tempo, setTempo] = useState("all"),
-    [answerStyle, setAnswerStyle] = useState("degrees"),
-    [length, setLength] = useState(10);
+  const [mode, setMode] = usePreference("mode"),
+    [key, setKey] = usePreference("key"),
+    [tempo, setTempo] = usePreference("tempo"),
+    [answerStyle, setAnswerStyle] = usePreference("answerStyle"),
+    [length, setLength] = usePreference("length");
   const [session, setSession] = useState(null),
     [notice, setNotice] = useState("");
   const listening = useListening();
@@ -86,26 +88,23 @@ export default function EarTraining() {
     setLoadError("");
     const controller = new AbortController();
     setLocalError("");
-    Promise.allSettled([
-      loadCatalog(controller.signal),
-      listRecordings(),
-      listRounds(),
-    ]).then(([catalog, recordings, rounds]) => {
-      if (cancelled) return;
-      if (catalog.status === "fulfilled") setPublished(catalog.value);
-      else
-        setLoadError(
-          catalog.reason.message ||
-            "The site recording catalog could not load. Please try again.",
-        );
-      if (recordings.status === "fulfilled") setDrafts(recordings.value);
-      if (rounds.status === "fulfilled") setHistory(rounds.value);
-      if (recordings.status === "rejected" || rounds.status === "rejected")
-        setLocalError(
-          "Browser storage is unavailable. Site recordings still work, but local drafts and personal scores may not be saved.",
-        );
-      setLoading(false);
-    });
+    Promise.allSettled([loadCatalog(controller.signal), listRecordings()]).then(
+      ([catalog, recordings]) => {
+        if (cancelled) return;
+        if (catalog.status === "fulfilled") setPublished(catalog.value);
+        else
+          setLoadError(
+            catalog.reason.message ||
+              "The site recording catalog could not load. Please try again.",
+          );
+        if (recordings.status === "fulfilled") setDrafts(recordings.value);
+        if (recordings.status === "rejected")
+          setLocalError(
+            "Browser storage is unavailable. Site recordings still work, but local drafts and personal scores may not be saved.",
+          );
+        setLoading(false);
+      },
+    );
     return () => {
       cancelled = true;
       controller.abort();
@@ -209,11 +208,10 @@ export default function EarTraining() {
     };
     setSession((s) => ({ ...s, complete: true }));
     try {
-      await saveRound(result);
-      setHistory((h) => [...h, result]);
+      await account.save("scores", result);
     } catch {
       setNotice(
-        "Your round is complete, but its score could not be saved in this browser.",
+        "Your round is complete, but its score could not be saved. Please check your connection or browser storage.",
       );
     }
   };
@@ -689,7 +687,7 @@ export default function EarTraining() {
               )}
               <button
                 className="primary start-round"
-                disabled={!!unavailable}
+                disabled={!!unavailable || !account.ready}
                 onClick={() => begin()}
               >
                 Start listening
@@ -716,8 +714,9 @@ export default function EarTraining() {
                 </div>
               </div>
               <p>
-                Your completed rounds are saved in this browser. Replays are
-                always welcome.
+                Your completed rounds are saved{" "}
+                {account.user ? "to your account" : "in this browser"}. Replays
+                are always welcome.
               </p>
               <div className="training-tip">
                 <strong>Listen for the shape.</strong>

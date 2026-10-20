@@ -180,6 +180,10 @@ test("YouTube integration controls rate, repeats and survives library navigation
     page.getByText("YouTube supports looping and speed changes."),
   ).toBeVisible();
   await expect(page.getByLabel("Banjo focus")).toHaveCount(0);
+  await page.getByRole("button", { name: "Save tune", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Tune saved", exact: true }),
+  ).toBeDisabled();
   await page.getByRole("button", { name: "0.5×", exact: true }).click();
   expect(await page.evaluate(() => window.testPlayer.rate)).toBe(0.5);
   await page.getByLabel("END · B").fill("0:00.3");
@@ -194,10 +198,33 @@ test("YouTube integration controls rate, repeats and survives library navigation
   });
   await page.getByRole("button", { name: /Saved phrases/ }).click();
   expect(await page.evaluate(() => window.testPlayer.playing)).toBe(false);
+  await expect(
+    page.getByRole("button", { name: "A YouTube banjo tune", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Practice room" }).click();
   await expect(page.locator("#youtube-host")).toContainText(
     "YouTube API test fixture",
   );
   await page.getByRole("button", { name: "Play recording" }).click();
   expect(await page.evaluate(() => window.testPlayer.playing)).toBe(true);
+});
+
+test("unconfigured sign-in explains setup and guest preferences persist", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "hasn’t been configured",
+  );
+  await page.getByRole("button", { name: "Close account" }).click();
+  await page.getByLabel("Pause between loops in seconds").fill("8");
+  await page.getByRole("button", { name: "0.5×", exact: true }).click();
+  await page.reload();
+  await expect(page.getByLabel("Pause between loops in seconds")).toHaveValue(
+    "8",
+  );
+  await expect(
+    page.getByRole("button", { name: "0.5×", exact: true }),
+  ).toHaveClass("chosen");
 });

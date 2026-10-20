@@ -28,13 +28,17 @@ import {
 } from "lucide-react";
 import usePlayer from "./usePlayer";
 import EarTraining from "./training/EarTraining";
+import AccountProvider, {
+  useAccount,
+  usePreference,
+} from "./account/AccountProvider";
+import AccountControls, { AccountStatus } from "./account/AccountControls";
 import { createDemo } from "./audio";
 import {
   clamp,
   formatTime,
   loopBounds,
   parseTime,
-  readSaved,
   youtubeId,
 } from "./practice";
 import "./styles.css";
@@ -161,20 +165,22 @@ function Modal({ title, children, close }) {
   );
 }
 function App() {
+  const account = useAccount();
+  const saved = account.loops;
   const [source, setSource] = useState(null),
     [title, setTitle] = useState("A little forward roll");
   const [start, setStart] = useState(3),
-    [end, setEnd] = useState(9),
-    [loop, setLoop] = useState(true);
-  const [speed, setSpeed] = useState(0.75),
-    [gap, setGap] = useState(3),
-    [focus, setFocus] = useState(0),
-    [volume, setVolume] = useState(0.8);
+    [end, setEnd] = useState(9);
+  const [loop, setLoop] = usePreference("loop");
+  const [speed, setSpeed] = usePreference("speed"),
+    [gap, setGap] = usePreference("gap"),
+    [focus, setFocus] = usePreference("focus"),
+    [volume, setVolume] = usePreference("volume");
   const [url, setUrl] = useState(""),
     [urlError, setUrlError] = useState("");
-  const [saved, setSaved] = useState(readSaved),
-    [modal, setModal] = useState(null),
+  const [modal, setModal] = useState(null),
     [loopName, setLoopName] = useState("");
+  const [savingPhrase, setSavingPhrase] = useState(false);
   const [toast, setToast] = useState(""),
     [activeNav, setActiveNav] = useState("practice");
   const fileRef = useRef(null),
@@ -220,7 +226,6 @@ function App() {
     setSource(recording);
     setTitle(recording.title);
     setActiveNav("practice");
-    setFocus(0);
   };
   const demo = () => {
     const generated = createDemo();
@@ -243,18 +248,6 @@ function App() {
     const timer = setTimeout(() => setToast(""), 4000);
     return () => clearTimeout(timer);
   }, [toast]);
-  const persist = (next) => {
-    setSaved(next);
-    try {
-      localStorage.setItem("slowfolk-loops", JSON.stringify(next));
-      return true;
-    } catch {
-      notify(
-        "Browser storage is unavailable. Your phrases are saved for this session only.",
-      );
-      return false;
-    }
-  };
   const changeBounds = (a, b) => {
     if (!canSelect) return;
     const [nextStart, nextEnd] = loopBounds(a, b, player.duration);
@@ -306,9 +299,9 @@ function App() {
       title: file.name.replace(/\.[^.]+$/, ""),
     });
   };
-  const savePhrase = (e) => {
+  const savePhrase = async (e) => {
     e.preventDefault();
-    if (!loopName.trim()) return;
+    if (!loopName.trim() || savingPhrase) return;
     const next = {
       id: newId(),
       name: loopName.trim(),
@@ -321,9 +314,16 @@ function App() {
       speed,
       gap,
     };
-    const stored = persist([...saved, next]);
-    setModal(null);
-    if (stored) notify("Phrase saved. Come back to it anytime.");
+    setSavingPhrase(true);
+    try {
+      await account.save("loops", next);
+      setModal(null);
+      notify("Phrase saved. Come back to it anytime.");
+    } catch {
+      notify("This phrase could not be saved. Please try again.");
+    } finally {
+      setSavingPhrase(false);
+    }
   };
   const openPhrase = (item) => {
     if (source?.key === item.sourceKey) {
@@ -360,6 +360,7 @@ function App() {
       if (
         modal ||
         activeNav !== "practice" ||
+        document.querySelector("dialog[open]") ||
         e.ctrlKey ||
         e.metaKey ||
         e.altKey ||
@@ -446,7 +447,13 @@ function App() {
           <button
             className="icon-button delete"
             aria-label={`Delete ${item.name}`}
-            onClick={() => persist(saved.filter((x) => x.id !== item.id))}
+            onClick={() =>
+              account
+                .remove("loops", item.id)
+                .catch(() =>
+                  notify("The phrase could not be deleted. Please try again."),
+                )
+            }
           >
             <Trash2 size={15} />
           </button>
@@ -543,16 +550,19 @@ function App() {
                 ? "Saved phrases"
                 : "Practice room"}
           </span>
-          {activeNav !== "training" && (
-            <button
-              className="shortcut-button"
-              onClick={() => setModal("shortcuts")}
-            >
-              <Keyboard size={16} />
-              <span>Keyboard shortcuts</span>
-              <kbd>?</kbd>
-            </button>
-          )}
+          <div className="topbar-actions">
+            {activeNav !== "training" && (
+              <button
+                className="shortcut-button"
+                onClick={() => setModal("shortcuts")}
+              >
+                <Keyboard size={16} />
+                <span>Keyboard shortcuts</span>
+                <kbd>?</kbd>
+              </button>
+            )}
+            <AccountControls />
+          </div>
         </header>
         <main>
           <div className="page-heading">
@@ -581,6 +591,7 @@ function App() {
               </svg>
             </div>
           </div>
+          <AccountStatus />
           {activeNav === "training" && <EarTraining />}
           {activeNav === "saved" && (
             <section className="card library">
@@ -595,9 +606,66 @@ function App() {
               </div>
               {phraseList(saved)}
               <p className="library-note">
-                Saved in this browser. For uploaded recordings, load the same
-                file to revisit its phrases.
+                {account.user
+                  ? "Saved to your account."
+                  : "Saved in this browser."}{" "}
+                For uploaded recordings, load the same file to revisit its
+                phrases.
               </p>
+            </section>
+          )}
+          {activeNav === "saved" && (
+            <section className="card library saved-tunes">
+              <div className="section-heading">
+                <h2>
+                  <Youtube size={20} /> Your saved tunes
+                </h2>
+                <span className="subtle">{account.links.length} tunes</span>
+              </div>
+              {account.links.length ? (
+                account.links.map((item) => (
+                  <div className="saved-item" key={item.id}>
+                    <button
+                      className="saved-open"
+                      onClick={() => {
+                        restore.current = null;
+                        setRecording({
+                          kind: "youtube",
+                          videoId: item.id,
+                          key: `youtube-${item.id}`,
+                          attempt: Date.now(),
+                          title: item.title,
+                        });
+                      }}
+                    >
+                      <span className="saved-icon">
+                        <Youtube size={18} />
+                      </span>
+                      <span>{item.title}</span>
+                    </button>
+                    <button
+                      className="icon-button"
+                      aria-label={`Delete tune ${item.title}`}
+                      onClick={() =>
+                        account
+                          .remove("links", item.id)
+                          .catch(() =>
+                            notify(
+                              "The tune could not be deleted. Please try again.",
+                            ),
+                          )
+                      }
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="library-note">
+                  Load a YouTube tune and choose “Save tune” to keep its link
+                  here.
+                </p>
+              )}
             </section>
           )}
           <div hidden={activeNav !== "practice"}>
@@ -651,6 +719,34 @@ function App() {
                     <div>
                       <div className="eyebrow small">ON THE RECORD</div>
                       <h2>{title}</h2>
+                      {isYouTube && (
+                        <button
+                          className="text-button save-tune"
+                          disabled={
+                            !account.ready ||
+                            account.links.some(
+                              (item) => item.id === source.videoId,
+                            )
+                          }
+                          onClick={() =>
+                            account
+                              .save("links", { id: source.videoId, title })
+                              .then(() => notify("Tune saved to your library."))
+                              .catch(() =>
+                                notify(
+                                  "This tune could not be saved. Please try again.",
+                                ),
+                              )
+                          }
+                        >
+                          <Plus size={15} />
+                          {account.links.some(
+                            (item) => item.id === source.videoId,
+                          )
+                            ? "Tune saved"
+                            : "Save tune"}
+                        </button>
+                      )}
                       <p>
                         {isYouTube ? (
                           <>
@@ -1039,7 +1135,7 @@ function App() {
                   </p>
                   <button
                     className="save-button"
-                    disabled={!canSelect}
+                    disabled={!canSelect || !account.ready}
                     onClick={() => {
                       setLoopName(`Phrase ${sourceLoops.length + 1}`);
                       setModal("save");
@@ -1125,8 +1221,12 @@ function App() {
               required
               onChange={(e) => setLoopName(e.target.value)}
             />
-            <button className="primary modal-submit" type="submit">
-              Save phrase
+            <button
+              className="primary modal-submit"
+              type="submit"
+              disabled={savingPhrase || !account.ready}
+            >
+              {savingPhrase ? "Saving…" : "Save phrase"}
               <Check size={16} />
             </button>
           </form>
@@ -1228,4 +1328,8 @@ function BookmarkIcon() {
     </svg>
   );
 }
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <AccountProvider>
+    <App />
+  </AccountProvider>,
+);
