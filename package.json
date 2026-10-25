@@ -9,6 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test tests/*.test.js",
     "test:browser": "playwright test",
+    "infra:init": "node scripts/infra-init.mjs",
+    "deploy": "node scripts/deploy.mjs",
     "test:firebase": "firebase emulators:exec --only auth,firestore --project demo-slowfolk 'node --test tests/rules/*.test.js && playwright test --config playwright.firebase.config.js'",
     "emulators": "firebase emulators:start --only auth,firestore --project demo-slowfolk",
     "recordings:import": "node scripts/recordings.mjs import",

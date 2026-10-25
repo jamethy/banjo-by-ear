@@ -583,6 +583,11 @@
   font-size: 12px;
   padding: 12px 17px;
 }
+.recording-loop[aria-pressed="true"] {
+  background: #e4edda;
+  border-color: #6c8457;
+  color: #344b27;
+}
 .reference-caption {
   text-align: center;
   font-size: 10px;

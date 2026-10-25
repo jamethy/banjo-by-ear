@@ -1,3 +1,4 @@
+import { mockYouTube } from "../helpers/youtube.js";
 import { test, expect } from "@playwright/test";
 
 test("sample loops with a real silent gap, and pause cancels the restart", async ({
@@ -46,7 +47,188 @@ test("saves phrases across reloads and restores their settings", async ({
   ).toHaveClass("chosen");
   await expect(page.getByLabel("START · A")).toHaveValue("0:03.0");
   await page.getByRole("button", { name: "Delete That tricky roll" }).click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Delete this phrase?",
+  });
+  await expect(confirmation).toContainText("That tricky roll");
+  await confirmation
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Delete That tricky roll" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Delete That tricky roll" }).click();
+  await confirmation
+    .getByRole("button", { name: "Delete phrase", exact: true })
+    .click();
   await expect(page.getByText("A good phrase is worth keeping.")).toBeVisible();
+});
+
+test("edits an existing phrase in the practice panel and restores changes after reload", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Save this phrase" }).click();
+  await page.getByLabel("Phrase name").fill("First phrase");
+  await page.getByRole("button", { name: "Save phrase", exact: true }).click();
+  const original = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("slowfolk-loops"))[0],
+  );
+  await page.getByRole("button", { name: /Saved phrases/ }).click();
+  await page
+    .getByRole("button", { name: "Edit First phrase", exact: true })
+    .click();
+  const panel = page.getByRole("region", {
+    name: "Phrase settings",
+    exact: true,
+  });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await panel.getByLabel("Phrase name").fill("Discard this edit");
+  await panel
+    .getByRole("button", { name: "Discard changes", exact: true })
+    .click();
+  await expect(panel.getByLabel("Phrase name")).toHaveValue("First phrase");
+  await panel.getByLabel("Phrase name").fill("Tricky ending");
+  await panel.getByLabel("START · A").fill("0:04.5");
+  await panel.getByLabel("START · A").press("Tab");
+  await panel.getByLabel("END · B").fill("0:08.2");
+  await panel.getByLabel("END · B").press("Tab");
+  await panel.getByRole("button", { name: "0.25×", exact: true }).click();
+  await panel.getByLabel("Pause between loops in seconds").fill("2.5");
+  await panel.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    panel.getByRole("button", { name: "Save changes" }),
+  ).toBeDisabled();
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("slowfolk-loops")),
+  );
+  expect(saved).toEqual([
+    {
+      ...original,
+      name: "Tricky ending",
+      start: 4.5,
+      end: 8.2,
+      speed: 0.25,
+      gap: 2.5,
+    },
+  ]);
+  await page.reload();
+  await page.getByRole("button", { name: /Saved phrases/ }).click();
+  await page.getByRole("button", { name: /^Tricky ending/ }).click();
+  await expect(page.getByLabel("START · A")).toHaveValue("0:04.5");
+  await expect(page.getByLabel("END · B")).toHaveValue("0:08.2");
+  await expect(
+    page.getByRole("button", { name: "0.25×", exact: true }),
+  ).toHaveClass("chosen");
+  await expect(page.getByLabel("Pause between loops in seconds")).toHaveValue(
+    "2.5",
+  );
+});
+
+test("groups existing phrases by video and edits and deletes within a group on mobile", async ({
+  page,
+}) => {
+  await mockYouTube(page);
+  const firstId = "dQw4w9WgXcQ",
+    secondId = "abcdefghijk";
+  const base = { kind: "youtube", speed: 0.5, gap: 3 };
+  const phrases = [
+    {
+      ...base,
+      id: "one",
+      videoId: firstId,
+      sourceKey: `youtube-${firstId}`,
+      title: "Banjo tune one",
+      name: "Ending",
+      start: 30,
+      end: 35,
+    },
+    {
+      ...base,
+      id: "two",
+      videoId: secondId,
+      sourceKey: `youtube-${secondId}`,
+      title: "Banjo tune two",
+      name: "Intro",
+      start: 5,
+      end: 10,
+    },
+    {
+      ...base,
+      id: "three",
+      videoId: firstId,
+      sourceKey: `youtube-${firstId}`,
+      title: "Banjo tune one",
+      name: "Intro",
+      start: 1,
+      end: 4,
+    },
+  ];
+  await page.goto("/");
+  await page.evaluate(
+    (items) => localStorage.setItem("slowfolk-loops", JSON.stringify(items)),
+    phrases,
+  );
+  await page.reload();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: /Saved phrases/ }).click();
+  const first = page.getByRole("region", {
+    name: "Banjo tune one",
+    exact: true,
+  });
+  const second = page.getByRole("region", {
+    name: "Banjo tune two",
+    exact: true,
+  });
+  await expect(page.locator(".phrase-group")).toHaveCount(2);
+  await expect(first.locator(".saved-open strong")).toHaveText([
+    "Intro",
+    "Ending",
+  ]);
+  await expect(second.locator(".saved-open strong")).toHaveText(["Intro"]);
+  await first.getByRole("button", { name: "Edit Intro", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Phrase settings" })
+    .getByLabel("Phrase name")
+    .fill("Opening roll");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: /Saved phrases/ }).click();
+  await expect(
+    first.getByRole("button", { name: "Edit Opening roll", exact: true }),
+  ).toBeVisible();
+  await expect(
+    second.getByRole("button", { name: "Edit Intro", exact: true }),
+  ).toBeVisible();
+  await first
+    .getByRole("button", { name: "Delete Ending", exact: true })
+    .click();
+  await page.keyboard.press("Escape");
+  await expect(first.locator(".saved-item")).toHaveCount(2);
+  await first
+    .getByRole("button", { name: "Delete Ending", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Delete phrase", exact: true })
+    .click();
+  await expect(first.locator(".saved-item")).toHaveCount(1);
+  await first
+    .getByRole("button", { name: "Delete Opening roll", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Delete phrase", exact: true })
+    .click();
+  await expect(first).not.toBeVisible();
+  await expect(second.locator(".saved-item")).toHaveCount(1);
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("slowfolk-loops")),
+    ),
+  ).toEqual([phrases[1]]);
 });
 
 test("uploads local audio, applies focus, and repeats without a gap", async ({
@@ -117,57 +299,7 @@ test("validates links, supports keyboard selection and remains usable on mobile"
 test("YouTube integration controls rate, repeats and survives library navigation", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    window.YT = {
-      Player: class {
-        constructor(target, config) {
-          this.config = config;
-          this.time = 0;
-          this.playing = false;
-          this.rate = 1;
-          target.textContent = "YouTube API test fixture";
-          this.timer = setInterval(() => {
-            if (this.playing) this.time += 0.03 * this.rate;
-          }, 30);
-          window.testPlayer = this;
-          setTimeout(() => config.events.onReady({ target: this }), 20);
-        }
-        getDuration() {
-          return this.playing ? 60.05 : 60;
-        }
-        getCurrentTime() {
-          return this.time;
-        }
-        getAvailablePlaybackRates() {
-          return [0.25, 0.5, 0.75, 1];
-        }
-        getVideoData() {
-          return { title: "A YouTube banjo tune" };
-        }
-        setVolume(v) {
-          this.volume = v;
-        }
-        setPlaybackRate(v) {
-          this.rate = v;
-          this.config.events.onPlaybackRateChange({ data: v });
-        }
-        playVideo() {
-          this.playing = true;
-          this.config.events.onStateChange({ data: 1, target: this });
-        }
-        pauseVideo() {
-          this.playing = false;
-          this.config.events.onStateChange({ data: 2, target: this });
-        }
-        seekTo(v) {
-          this.time = v;
-        }
-        destroy() {
-          clearInterval(this.timer);
-        }
-      },
-    };
-  });
+  await mockYouTube(page);
   await page.goto("/");
   await page
     .getByLabel("YouTube video URL")

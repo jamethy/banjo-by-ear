@@ -1,24 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { KEYS } from "./model";
 
-export default function useListening() {
-  const audio = useRef(null),
-    url = useRef(null),
+export default function useListening({ loop = false } = {}) {
+  const source = useRef(null),
+    cached = useRef(null),
+    loading = useRef(null),
+    looping = useRef(loop),
     context = useRef(null),
     oscillator = useRef(null),
     request = useRef(0);
   const [playing, setPlaying] = useState(false),
     [error, setError] = useState("");
-  const stop = () => {
+  const halt = () => {
     request.current++;
-    if (audio.current) {
-      audio.current.pause();
-      audio.current.removeAttribute("src");
-      audio.current.load();
-    }
-    if (url.current) {
-      URL.revokeObjectURL(url.current);
-      url.current = null;
+    loading.current?.abort();
+    loading.current = null;
+    if (source.current) {
+      source.current.onended = null;
+      source.current.stop();
+      source.current.disconnect();
+      source.current = null;
     }
     if (oscillator.current) {
       try {
@@ -28,37 +29,65 @@ export default function useListening() {
       }
       oscillator.current = null;
     }
+  };
+  const stop = () => {
+    halt();
     setPlaying(false);
   };
   useEffect(() => {
-    audio.current = new Audio();
-    audio.current.onended = () => setPlaying(false);
-    audio.current.onerror = () => {
-      setPlaying(false);
-      setError(
-        "This recording could not be played. Check it in the recording library.",
-      );
-    };
     return () => {
-      request.current++;
-      audio.current.onended = audio.current.onerror = null;
-      audio.current.pause();
-      if (url.current) URL.revokeObjectURL(url.current);
+      halt();
       context.current?.close();
+      context.current = null;
+      cached.current = null;
     };
   }, []);
+  useEffect(() => {
+    looping.current = loop;
+    if (source.current) source.current.loop = loop;
+  }, [loop]);
   const play = async (sample) => {
     stop();
     setError("");
     const token = request.current;
     try {
-      if (sample.published) audio.current.src = sample.audioUrl;
-      else {
-        url.current = URL.createObjectURL(sample.audio);
-        audio.current.src = url.current;
-      }
-      await audio.current.play();
+      if (!context.current) context.current = new AudioContext();
+      const ctx = context.current;
+      await ctx.resume();
       if (request.current !== token) return false;
+      const key = sample.published ? sample.audioUrl : sample.audio;
+      let buffer = cached.current?.key === key ? cached.current.buffer : null;
+      if (!buffer) {
+        let bytes;
+        if (sample.published) {
+          const controller = new AbortController();
+          loading.current = controller;
+          const response = await fetch(sample.audioUrl, {
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error("Recording could not load.");
+          bytes = await response.arrayBuffer();
+        } else bytes = await sample.audio.arrayBuffer();
+        if (request.current !== token) return false;
+        buffer = await ctx.decodeAudioData(bytes);
+        if (request.current !== token) return false;
+        // Keep only the current clip so replay is instant without retaining
+        // the entire recording library in decoded form.
+        cached.current = { key, buffer };
+      }
+      loading.current = null;
+      const node = ctx.createBufferSource();
+      node.buffer = buffer;
+      node.loop = looping.current;
+      node.connect(ctx.destination);
+      node.onended = () => {
+        node.disconnect();
+        if (source.current !== node) return;
+        source.current = null;
+        setPlaying(false);
+      };
+      source.current = node;
+      node.start();
       setPlaying(true);
       return true;
     } catch {

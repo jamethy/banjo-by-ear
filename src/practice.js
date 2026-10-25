@@ -42,6 +42,31 @@ export function loopBounds(start, end, duration) {
 export function shouldRepeat(position, end, enabled, phase) {
   return enabled && phase === "playing" && position >= end;
 }
+export function groupPhrases(items, links = []) {
+  const groups = new Map();
+  for (const item of items) {
+    const key =
+      item.kind === "youtube" ? `youtube-${item.videoId}` : item.sourceKey;
+    if (!groups.has(key))
+      groups.set(key, {
+        key,
+        kind: item.kind,
+        title:
+          (item.kind === "youtube" &&
+            links.find((link) => link.id === item.videoId)?.title) ||
+          item.title ||
+          "Untitled recording",
+        items: [],
+      });
+    groups.get(key).items.push(item);
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    items: group.items.sort(
+      (a, b) => a.start - b.start || a.name.localeCompare(b.name),
+    ),
+  }));
+}
 export function readSaved() {
   try {
     const saved = JSON.parse(localStorage.getItem("slowfolk-loops") || "[]");

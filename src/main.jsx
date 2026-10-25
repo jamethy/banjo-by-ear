@@ -15,6 +15,7 @@ import {
   Minus,
   Music2,
   Pause,
+  Pencil,
   Play,
   Plus,
   Repeat2,
@@ -27,6 +28,10 @@ import {
   Youtube,
 } from "lucide-react";
 import usePlayer from "./usePlayer";
+import useLocation from "./useLocation";
+import { practicePath } from "./routes";
+import Modal from "./Modal";
+import PhraseDialog from "./PhraseDialog";
 import EarTraining from "./training/EarTraining";
 import AccountProvider, {
   useAccount,
@@ -37,6 +42,7 @@ import { createDemo } from "./audio";
 import {
   clamp,
   formatTime,
+  groupPhrases,
   loopBounds,
   parseTime,
   youtubeId,
@@ -136,37 +142,20 @@ function TimeInput({ label, value, onChange, disabled }) {
     </label>
   );
 }
-function Modal({ title, children, close }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    ref.current.showModal();
-  }, []);
-  return (
-    <dialog
-      ref={ref}
-      className="modal"
-      onCancel={close}
-      onClick={(e) => {
-        if (e.target === ref.current) close();
-      }}
-    >
-      <div className="modal-heading">
-        <h2>{title}</h2>
-        <button
-          className="icon-button"
-          onClick={close}
-          aria-label="Close dialog"
-        >
-          <X size={20} />
-        </button>
-      </div>
-      {children}
-    </dialog>
-  );
-}
 function App() {
   const account = useAccount();
   const saved = account.loops;
+  const [location, navigate] = useLocation();
+  const handledLocation = useRef(null);
+  const [routeNotice, setRouteNotice] = useState("");
+  const [selectedPhrase, setSelectedPhrase] = useState(null);
+  const [phraseName, setPhraseName] = useState("");
+  const [phraseError, setPhraseError] = useState("");
+  const phrasePanel = useRef(null);
+  const writeLocation = (path, options) => {
+    handledLocation.current = navigate(path, options);
+    setRouteNotice("");
+  };
   const [source, setSource] = useState(null),
     [title, setTitle] = useState("A little forward roll");
   const [start, setStart] = useState(3),
@@ -181,6 +170,7 @@ function App() {
   const [modal, setModal] = useState(null),
     [loopName, setLoopName] = useState("");
   const [savingPhrase, setSavingPhrase] = useState(false);
+  const [phraseAction, setPhraseAction] = useState(null);
   const [toast, setToast] = useState(""),
     [activeNav, setActiveNav] = useState("practice");
   const fileRef = useRef(null),
@@ -218,6 +208,9 @@ function App() {
   const active = ["playing", "waiting"].includes(player.phase);
   const sourceLoops = saved.filter((item) => item.sourceKey === source?.key);
   const setRecording = (recording) => {
+    setSelectedPhrase(null);
+    setPhraseName("");
+    setPhraseError("");
     player.pause();
     if (sourceRef.current?.url) URL.revokeObjectURL(sourceRef.current.url);
     sourceRef.current = recording;
@@ -238,7 +231,6 @@ function App() {
     });
   };
   useEffect(() => {
-    demo();
     return () => {
       if (sourceRef.current?.url) URL.revokeObjectURL(sourceRef.current.url);
     };
@@ -265,19 +257,29 @@ function App() {
       return;
     }
     setUrlError("");
+    openVideo(id);
+  };
+  const openVideo = (id, videoTitle = "Your YouTube tune", write = true) => {
     restore.current = null;
-    if (source?.key === `youtube-${id}` && player.phase !== "error") {
+    setSelectedPhrase(null);
+    setPhraseName("");
+    setPhraseError("");
+    setUrl(`https://www.youtube.com/watch?v=${id}`);
+    if (source?.key === `youtube-${id}` && ready) {
+      player.pause();
+      setStart(0);
+      setEnd(Math.min(8, player.duration));
       player.seek(0);
-      notify("This tune is already open.");
-      return;
-    }
-    setRecording({
-      kind: "youtube",
-      videoId: id,
-      key: `youtube-${id}`,
-      attempt: Date.now(),
-      title: "Your YouTube tune",
-    });
+      setActiveNav("practice");
+    } else
+      setRecording({
+        kind: "youtube",
+        videoId: id,
+        key: `youtube-${id}`,
+        attempt: Date.now(),
+        title: videoTitle,
+      });
+    if (write) writeLocation(`/pr/${id}`);
   };
   const upload = (e) => {
     const file = e.target.files?.[0];
@@ -288,8 +290,9 @@ function App() {
       return;
     }
     const fileKey = `file-${file.name}-${file.size}-${file.lastModified}`;
-    restore.current =
+    const phrase =
       pendingFile.current?.sourceKey === fileKey ? pendingFile.current : null;
+    restore.current = phrase;
     pendingFile.current = null;
     setRecording({
       kind: "file",
@@ -298,6 +301,11 @@ function App() {
       file,
       title: file.name.replace(/\.[^.]+$/, ""),
     });
+    if (phrase) {
+      setSelectedPhrase(phrase);
+      setPhraseName(phrase.name);
+    }
+    writeLocation("/");
   };
   const savePhrase = async (e) => {
     e.preventDefault();
@@ -318,6 +326,9 @@ function App() {
     try {
       await account.save("loops", next);
       setModal(null);
+      setSelectedPhrase(next);
+      setPhraseName(next.name);
+      writeLocation(practicePath(source, next.id));
       notify("Phrase saved. Come back to it anytime.");
     } catch {
       notify("This phrase could not be saved. Please try again.");
@@ -325,20 +336,18 @@ function App() {
       setSavingPhrase(false);
     }
   };
-  const openPhrase = (item) => {
-    if (source?.key === item.sourceKey) {
-      player.pause();
-      changeBounds(item.start, item.end);
-      player.seek(item.start);
-    } else if (item.kind === "file") {
+  const openPhrase = (item, { write = true, focusPanel = false } = {}) => {
+    if (item.kind === "file" && source?.key !== item.sourceKey) {
       pendingFile.current = item;
-      setSpeed(item.speed || 0.75);
-      setGap(item.gap ?? 3);
+      setSpeed(item.speed);
+      setGap(item.gap);
       setLoop(true);
       notify(`Upload “${item.title}” again to use this phrase.`);
       fileRef.current.click();
       return;
-    } else {
+    }
+    player.pause();
+    if (source?.key !== item.sourceKey) {
       restore.current = item;
       if (item.kind === "demo") demo();
       else
@@ -348,13 +357,140 @@ function App() {
           videoId: item.videoId,
           title: item.title,
         });
-    }
-    setSpeed(item.speed || 0.75);
-    setGap(item.gap ?? 3);
+    } else if (canSelect) {
+      restore.current = null;
+      player.seek(item.start);
+    } else restore.current = item;
+    const bounds =
+      source?.key === item.sourceKey && canSelect
+        ? loopBounds(item.start, item.end, player.duration)
+        : [item.start, item.end];
+    setStart(bounds[0]);
+    setEnd(bounds[1]);
+    setSelectedPhrase(item);
+    setPhraseName(item.name);
+    setPhraseError("");
+    setSpeed(item.speed);
+    setGap(item.gap);
     setLoop(true);
     setActiveNav("practice");
     setModal(null);
+    if (item.kind === "youtube")
+      setUrl(`https://www.youtube.com/watch?v=${item.videoId}`);
+    if (write) writeLocation(practicePath(item, item.id));
+    if (focusPanel)
+      requestAnimationFrame(() => {
+        phrasePanel.current?.scrollIntoView({
+          block: "center",
+          behavior: "smooth",
+        });
+        phrasePanel.current
+          ?.querySelector("input")
+          ?.focus({ preventScroll: true });
+      });
   };
+  const saveChanges = async () => {
+    if (!selectedPhrase || savingPhrase || !canSelect || !account.ready) return;
+    if (!phraseName.trim()) return setPhraseError("Give this phrase a name.");
+    if (!saved.some((item) => item.id === selectedPhrase.id))
+      return setPhraseError(
+        "This phrase was deleted. Save it as a new phrase to keep these settings.",
+      );
+    const next = {
+      ...selectedPhrase,
+      name: phraseName.trim(),
+      start,
+      end,
+      speed,
+      gap,
+    };
+    setSavingPhrase(true);
+    setPhraseError("");
+    try {
+      await account.save("loops", next);
+      setSelectedPhrase(next);
+      setPhraseName(next.name);
+      notify("Phrase updated.");
+    } catch {
+      setPhraseError("Your changes could not be saved. Please try again.");
+    } finally {
+      setSavingPhrase(false);
+    }
+  };
+  const phraseDirty =
+    !!selectedPhrase &&
+    (phraseName.trim() !== selectedPhrase.name ||
+      start !== selectedPhrase.start ||
+      end !== selectedPhrase.end ||
+      speed !== selectedPhrase.speed ||
+      gap !== selectedPhrase.gap);
+  const showSection = (view) => {
+    if (view !== "practice") player.pause();
+    setActiveNav(view);
+    writeLocation(
+      view === "practice"
+        ? practicePath(source, selectedPhrase?.id)
+        : `/${view}`,
+    );
+  };
+  // History navigation and initial loads resolve only after the user's library
+  // is ready. Ordinary snapshot updates must not overwrite an in-progress edit.
+  useEffect(() => {
+    if (handledLocation.current === location) return;
+    setModal(null);
+    setPhraseAction(null);
+    setRouteNotice("");
+    setActiveNav(location.view);
+    player.pause();
+    if (location.view !== "practice") {
+      if (!source) demo();
+      setActiveNav(location.view);
+      handledLocation.current = location;
+      return;
+    }
+    if (location.error) {
+      setRouteNotice(
+        "This practice link is invalid. Open a YouTube video or choose a saved phrase.",
+      );
+      if (!source) demo();
+      handledLocation.current = location;
+      return;
+    }
+    if (!location.videoId) {
+      if (!source || source.kind === "youtube") demo();
+      handledLocation.current = location;
+      return;
+    }
+    if (location.phraseId) {
+      if (!account.ready) {
+        if (source?.videoId !== location.videoId)
+          openVideo(location.videoId, undefined, false);
+        setRouteNotice("Opening your saved phrase…");
+        return;
+      }
+      const item = saved.find(
+        (item) =>
+          item.id === location.phraseId &&
+          item.kind === "youtube" &&
+          item.videoId === location.videoId,
+      );
+      if (item) {
+        openPhrase(item, { write: false });
+        handledLocation.current = location;
+      } else {
+        if (source?.videoId !== location.videoId || selectedPhrase)
+          openVideo(location.videoId, undefined, false);
+        setRouteNotice(
+          account.user
+            ? "This phrase isn't in your account. It may have been deleted or saved under another account. You can still practice the video."
+            : "This phrase isn't saved in this browser. Sign in to the account that saved it, or practice the video on its own.",
+        );
+      }
+    } else {
+      openVideo(location.videoId, undefined, false);
+      handledLocation.current = location;
+    }
+  }, [location, account.ready, saved]);
   useEffect(() => {
     const keydown = (e) => {
       if (
@@ -430,7 +566,10 @@ function App() {
   const phraseList = (items) =>
     items.length ? (
       items.map((item) => (
-        <div className="saved-item" key={item.id}>
+        <div
+          className={`saved-item${selectedPhrase?.id === item.id ? " selected-phrase" : ""}`}
+          key={item.id}
+        >
           <button className="saved-open" onClick={() => openPhrase(item)}>
             <span className="saved-icon">
               <Repeat2 size={17} />
@@ -445,15 +584,18 @@ function App() {
             <Play size={15} />
           </button>
           <button
+            className="icon-button"
+            aria-label={`Edit ${item.name}`}
+            disabled={!account.ready}
+            onClick={() => openPhrase(item, { focusPanel: true })}
+          >
+            <Pencil size={15} />
+          </button>
+          <button
             className="icon-button delete"
             aria-label={`Delete ${item.name}`}
-            onClick={() =>
-              account
-                .remove("loops", item.id)
-                .catch(() =>
-                  notify("The phrase could not be deleted. Please try again."),
-                )
-            }
+            disabled={!account.ready}
+            onClick={() => setPhraseAction({ action: "delete", item })}
           >
             <Trash2 size={15} />
           </button>
@@ -484,7 +626,7 @@ function App() {
             className={
               activeNav === "practice" ? "nav-item selected" : "nav-item"
             }
-            onClick={() => setActiveNav("practice")}
+            onClick={() => showSection("practice")}
           >
             <AudioLines size={19} />
             Practice room
@@ -493,8 +635,7 @@ function App() {
           <button
             className={activeNav === "saved" ? "nav-item selected" : "nav-item"}
             onClick={() => {
-              player.pause();
-              setActiveNav("saved");
+              showSection("saved");
             }}
           >
             <ListMusic size={19} />
@@ -505,8 +646,7 @@ function App() {
               activeNav === "training" ? "nav-item selected" : "nav-item"
             }
             onClick={() => {
-              player.pause();
-              setActiveNav("training");
+              showSection("training");
             }}
           >
             <Headphones size={19} />
@@ -592,6 +732,11 @@ function App() {
             </div>
           </div>
           <AccountStatus />
+          {routeNotice && (
+            <p className="practice-route-notice" role="status">
+              {routeNotice}
+            </p>
+          )}
           {activeNav === "training" && <EarTraining />}
           {activeNav === "saved" && (
             <section className="card library">
@@ -604,7 +749,36 @@ function App() {
                   {saved.length} {saved.length === 1 ? "phrase" : "phrases"}
                 </span>
               </div>
-              {phraseList(saved)}
+              {saved.length
+                ? groupPhrases(saved, account.links).map((group) => (
+                    <section
+                      className="phrase-group"
+                      key={group.key}
+                      aria-label={group.title}
+                    >
+                      <div className="phrase-group-heading">
+                        {group.kind === "youtube" ? (
+                          <Youtube size={20} />
+                        ) : (
+                          <Music2 size={20} />
+                        )}
+                        <div>
+                          <h3>{group.title}</h3>
+                          <p>
+                            {group.kind === "youtube"
+                              ? "YouTube"
+                              : group.kind === "demo"
+                                ? "Practice sample"
+                                : "Uploaded recording"}{" "}
+                            · {group.items.length}{" "}
+                            {group.items.length === 1 ? "phrase" : "phrases"}
+                          </p>
+                        </div>
+                      </div>
+                      {phraseList(group.items)}
+                    </section>
+                  ))
+                : phraseList([])}
               <p className="library-note">
                 {account.user
                   ? "Saved to your account."
@@ -628,14 +802,7 @@ function App() {
                     <button
                       className="saved-open"
                       onClick={() => {
-                        restore.current = null;
-                        setRecording({
-                          kind: "youtube",
-                          videoId: item.id,
-                          key: `youtube-${item.id}`,
-                          attempt: Date.now(),
-                          title: item.title,
-                        });
+                        openVideo(item.id, item.title);
                       }}
                     >
                       <span className="saved-icon">
@@ -1048,7 +1215,11 @@ function App() {
                 </section>
               </div>
               <div className="settings-column">
-                <section className="card loop-settings">
+                <section
+                  className="card loop-settings"
+                  ref={phrasePanel}
+                  aria-label="Phrase settings"
+                >
                   <div className="section-heading">
                     <h2>
                       <Repeat2 size={18} />
@@ -1056,6 +1227,26 @@ function App() {
                     </h2>
                     <span className="step-label">A → B</span>
                   </div>
+                  {selectedPhrase && (
+                    <div className="selected-phrase-editor">
+                      <label
+                        className="dialog-label"
+                        htmlFor="selected-phrase-name"
+                      >
+                        Phrase name
+                      </label>
+                      <input
+                        id="selected-phrase-name"
+                        className="dialog-input"
+                        value={phraseName}
+                        maxLength={200}
+                        onChange={(event) => setPhraseName(event.target.value)}
+                      />
+                      <p className="setting-note">
+                        {phraseDirty ? "Unsaved changes" : "Saved phrase"}
+                      </p>
+                    </div>
+                  )}
                   <div className="loop-times">
                     <TimeInput
                       label="START · A"
@@ -1133,16 +1324,56 @@ function App() {
                   <p className="setting-note">
                     Listen. Have a go. Do it again.
                   </p>
+                  {selectedPhrase && (
+                    <div className="phrase-save-actions">
+                      {phraseError && (
+                        <p className="phrase-dialog-error" role="alert">
+                          {phraseError}
+                        </p>
+                      )}
+                      <button
+                        className="primary"
+                        onClick={saveChanges}
+                        disabled={
+                          !phraseDirty ||
+                          !canSelect ||
+                          !account.ready ||
+                          savingPhrase ||
+                          !phraseName.trim()
+                        }
+                      >
+                        <Check size={16} />{" "}
+                        {savingPhrase ? "Saving…" : "Save changes"}
+                      </button>
+                      <button
+                        className="text-button"
+                        disabled={!phraseDirty || savingPhrase}
+                        onClick={() =>
+                          openPhrase(
+                            saved.find(
+                              (item) => item.id === selectedPhrase.id,
+                            ) || selectedPhrase,
+                          )
+                        }
+                      >
+                        Discard changes
+                      </button>
+                    </div>
+                  )}
                   <button
                     className="save-button"
                     disabled={!canSelect || !account.ready}
                     onClick={() => {
-                      setLoopName(`Phrase ${sourceLoops.length + 1}`);
+                      setLoopName(
+                        selectedPhrase
+                          ? `${phraseName.trim()} (copy)`
+                          : `Phrase ${sourceLoops.length + 1}`,
+                      );
                       setModal("save");
                     }}
                   >
                     <Plus size={16} />
-                    Save this phrase
+                    {selectedPhrase ? "Save as new phrase" : "Save this phrase"}
                   </button>
                 </section>
                 <section className="card saved-card">
@@ -1202,6 +1433,23 @@ function App() {
             <X size={15} />
           </button>
         </div>
+      )}
+      {phraseAction && (
+        <PhraseDialog
+          key={`${phraseAction.action}-${phraseAction.item.id}`}
+          {...phraseAction}
+          account={account}
+          close={() => setPhraseAction(null)}
+          onDeleted={() => {
+            if (selectedPhrase?.id === phraseAction.item.id) {
+              setSelectedPhrase(null);
+              setPhraseName("");
+              setPhraseError("");
+              if (activeNav === "practice")
+                writeLocation(practicePath(source), { replace: true });
+            }
+          }}
+        />
       )}
       {modal === "save" && (
         <Modal title="Keep this little phrase" close={() => setModal(null)}>
@@ -1306,6 +1554,7 @@ function App() {
             onClick={() => {
               restore.current = null;
               demo();
+              writeLocation("/");
               setModal(null);
             }}
           >

@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   Music2,
   Play,
+  Repeat,
   RotateCcw,
   Square,
   Trophy,
@@ -78,8 +79,11 @@ export default function EarTraining() {
     [answerStyle, setAnswerStyle] = usePreference("answerStyle"),
     [length, setLength] = usePreference("length");
   const [session, setSession] = useState(null),
-    [notice, setNotice] = useState("");
-  const listening = useListening();
+    [notice, setNotice] = useState(""),
+    [loopRecording, setLoopRecording] = useState(false);
+  const listening = useListening({
+    loop: loopRecording && tab === "play" && !!session && !session.complete,
+  });
   const completing = useRef(false),
     focusRef = useRef(null);
   useEffect(() => {
@@ -412,6 +416,15 @@ export default function EarTraining() {
                     : session.heard
                       ? "Listen again"
                       : "Listen to recording"}
+                </button>
+                <button
+                  className="secondary-button recording-loop"
+                  aria-label="Loop recording"
+                  aria-pressed={loopRecording}
+                  onClick={() => setLoopRecording((enabled) => !enabled)}
+                >
+                  <Repeat size={16} />
+                  Loop {loopRecording ? "on" : "off"}
                 </button>
                 {session.mode !== "rolls" && (
                   <button

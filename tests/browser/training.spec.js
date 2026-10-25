@@ -1,5 +1,12 @@
 import { test, expect } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  // Tests that need recordings install their own catalog in seed().
+  await page.route("**/recordings/catalog.json", (route) =>
+    route.fulfill({ json: { version: 1, recordings: [] } }),
+  );
+});
+
 function wav() {
   const rate = 8000,
     count = 4000,
@@ -152,6 +159,116 @@ test("imports, plays, exports, edits, and deletes a local recording draft", asyn
     page.getByText("Prepare the next set of recordings."),
   ).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("recording loop repeats audio, toggles during playback, and stops between questions", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const start = AudioBufferSourceNode.prototype.start;
+    const stop = AudioBufferSourceNode.prototype.stop;
+    window.recordingStarts = 0;
+    AudioBufferSourceNode.prototype.start = function (...args) {
+      if (this.context instanceof AudioContext) {
+        window.trainingAudio = this;
+        window.recordingStarts++;
+        this.startedAt = this.context.currentTime;
+        this.finished = false;
+        this.addEventListener("ended", () => (this.finished = true));
+      }
+      return start.apply(this, args);
+    };
+    AudioBufferSourceNode.prototype.stop = function (...args) {
+      this.finished = true;
+      return stop.apply(this, args);
+    };
+  });
+  await seed(page);
+  await page.getByRole("button", { name: "Start listening" }).click();
+  const loop = page.getByRole("button", {
+    name: "Loop recording",
+    exact: true,
+  });
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+  await loop.click();
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
+  await page
+    .getByRole("button", { name: "Listen to recording", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const node = window.trainingAudio;
+        return node
+          ? (node.context.currentTime - node.startedAt) / node.buffer.duration
+          : 0;
+      }),
+    )
+    .toBeGreaterThan(1);
+  await expect(
+    page.getByRole("button", { name: "Stop recording", exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => window.recordingStarts)).toBe(1);
+  // Render the same decoded buffer and loop settings to verify that every
+  // sample crosses the wrap without any inserted silence or missing frames.
+  const continuous = await page.evaluate(async () => {
+    const node = window.trainingAudio;
+    const buffer = node.buffer;
+    const offline = new OfflineAudioContext(
+      buffer.numberOfChannels,
+      buffer.length * 3,
+      buffer.sampleRate,
+    );
+    const source = offline.createBufferSource();
+    source.buffer = buffer;
+    source.loop = node.loop;
+    source.connect(offline.destination);
+    source.start();
+    const rendered = await offline.startRendering();
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      const expected = buffer.getChannelData(channel);
+      const actual = rendered.getChannelData(channel);
+      for (let i = 0; i < actual.length; i++)
+        if (Math.abs(actual[i] - expected[i % expected.length]) > 0.000001)
+          return false;
+    }
+    return true;
+  });
+  expect(continuous).toBe(true);
+  await loop.click();
+  await expect(loop).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.getByRole("button", { name: "Listen again", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Listen again", exact: true }).click();
+  await loop.click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const node = window.trainingAudio;
+        return (
+          (node.context.currentTime - node.startedAt) / node.buffer.duration
+        );
+      }),
+    )
+    .toBeGreaterThan(2);
+  await page.getByRole("radio", { name: "Forward roll", exact: true }).check();
+  await page.getByRole("button", { name: "Check answer", exact: true }).click();
+  expect(await page.evaluate(() => window.trainingAudio.finished)).toBe(true);
+  await page
+    .getByRole("button", { name: "Next question", exact: true })
+    .click();
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Listen to recording", exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => window.trainingAudio.finished)).toBe(true);
+  await page
+    .getByRole("button", { name: "Listen to recording", exact: true })
+    .click();
+  await page.getByRole("button", { name: "End round", exact: true }).click();
+  expect(await page.evaluate(() => window.trainingAudio.finished)).toBe(true);
 });
 
 test("hard roll round hides labels, grades both answers, and stores one score", async ({

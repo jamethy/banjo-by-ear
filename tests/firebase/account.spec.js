@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { mockYouTube } from "../helpers/youtube.js";
 
 async function login(page, email) {
   // The emulator's optional UI styling is hosted externally; keep tests local.
@@ -30,8 +31,10 @@ async function logout(page) {
   ).toBeVisible();
 }
 async function savePhrase(page, name) {
-  await page.getByRole("button", { name: "Save this phrase" }).click();
-  await page.getByLabel("Phrase name").fill(name);
+  await page
+    .getByRole("button", { name: /Save (this phrase|as new phrase)/ })
+    .click();
+  await page.getByRole("dialog").getByLabel("Phrase name").fill(name);
   await page.getByRole("button", { name: "Save phrase", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
 }
@@ -110,11 +113,30 @@ test("Google popup, explicit import, cross-device sync and account isolation", a
     .getByRole("button", { name: "Delete tune Guest YouTube tune" })
     .click();
   await otherDevice
-    .getByRole("button", { name: "Delete Alice private phrase" })
+    .getByRole("button", { name: "Edit Alice private phrase", exact: true })
+    .click();
+  await otherDevice
+    .getByRole("region", { name: "Phrase settings", exact: true })
+    .getByLabel("Phrase name")
+    .fill("Alice edited phrase");
+  await otherDevice
+    .getByRole("button", { name: "Save changes", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^Alice edited phrase/ }),
+  ).toBeVisible();
+  await otherDevice
+    .getByRole("button", { name: "Delete Alice edited phrase" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^Alice edited phrase/ }),
+  ).toBeVisible();
+  await otherDevice
+    .getByRole("button", { name: "Delete phrase", exact: true })
     .click();
   await page.getByRole("button", { name: /Saved phrases/ }).click();
   await expect(
-    page.getByRole("button", { name: /^Alice private phrase/ }),
+    page.getByRole("button", { name: /^Alice edited phrase/ }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Guest YouTube tune", exact: true }),
@@ -125,6 +147,9 @@ test("Google popup, explicit import, cross-device sync and account isolation", a
   await second.close();
 
   await logout(page);
+  await page
+    .getByRole("button", { name: "Practice room", exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: "0.5×", exact: true }),
   ).toHaveClass("chosen");
@@ -257,4 +282,62 @@ test("offline changes show pending state and sync after reconnect", async ({
   await expect(
     page.getByRole("button", { name: "0.5×", exact: true }),
   ).toHaveClass("chosen");
+});
+
+test("private phrase deep links resolve after sign-in and survive refresh", async ({
+  page,
+  browser,
+}) => {
+  await mockYouTube(page);
+  await page.goto("/");
+  await login(page, "deep-links@example.test");
+  await page
+    .getByLabel("YouTube video URL")
+    .fill("https://youtu.be/dQw4w9WgXcQ");
+  await page.getByRole("button", { name: "Load tune", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Play recording", exact: true }),
+  ).toBeEnabled();
+  await page.getByLabel("END · B").fill("0:20.0");
+  await page.getByLabel("END · B").press("Tab");
+  await page.getByLabel("START · A").fill("0:15.0");
+  await page.getByLabel("START · A").press("Tab");
+  await page.getByRole("button", { name: "0.25×", exact: true }).click();
+  await page.getByLabel("Pause between loops in seconds").fill("9");
+  await savePhrase(page, "Signed-in loop");
+  const deepLink = page.url();
+  expect(new URL(deepLink).pathname).toMatch(/^\/pr\/dQw4w9WgXcQ\/.+/);
+  const context = await browser.newContext();
+  try {
+    const other = await context.newPage();
+    await mockYouTube(other);
+    await other.goto(deepLink);
+    await expect(other.locator(".practice-route-notice")).toContainText(
+      "isn't saved in this browser",
+    );
+    await login(other, "deep-links@example.test");
+    const panel = other.getByRole("region", { name: "Phrase settings" });
+    await expect(panel.getByLabel("Phrase name")).toHaveValue("Signed-in loop");
+    await expect(other.getByLabel("START · A")).toHaveValue("0:15.0");
+    await expect(other.getByLabel("END · B")).toHaveValue("0:20.0");
+    await expect(
+      other.getByRole("button", { name: "0.25×", exact: true }),
+    ).toHaveClass("chosen");
+    await expect(
+      other.getByLabel("Pause between loops in seconds"),
+    ).toHaveValue("9");
+    await other.reload();
+    await expect(panel.getByLabel("Phrase name")).toHaveValue("Signed-in loop");
+    await expect(
+      panel.getByRole("button", { name: "Save changes" }),
+    ).toBeDisabled();
+    await logout(other);
+    await expect(other).toHaveURL(deepLink);
+    await expect(other.locator(".practice-route-notice")).toContainText(
+      "isn't saved in this browser",
+    );
+    await expect(panel.getByLabel("Phrase name")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 });

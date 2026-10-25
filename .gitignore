@@ -6,3 +6,9 @@ playwright-report/
 .env.*.local
 .firebase/
 *-debug.log
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra/backend.hcl
+crash.log

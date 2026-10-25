@@ -1230,6 +1230,84 @@ footer > span:last-child {
 .library .empty-saved {
   padding: 60px 0;
 }
+.phrase-group {
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+}
+.phrase-group-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.phrase-group-heading > svg {
+  flex-shrink: 0;
+  color: #7f8e6e;
+  margin-top: 2px;
+}
+.phrase-group-heading h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.phrase-group-heading p {
+  margin: 6px 0 0;
+  color: #7f8e6e;
+  font-size: 11px;
+}
+.phrase-group .saved-open strong {
+  font-size: 13px;
+}
+.phrase-group .saved-open small {
+  font-size: 11px;
+}
+.saved-item > .icon-button {
+  flex-shrink: 0;
+}
+.selected-phrase-editor {
+  margin: 18px 0;
+}
+.phrase-save-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+.phrase-save-actions .primary {
+  font-size: 12px;
+  width: 100%;
+}
+.practice-route-notice {
+  padding: 14px 18px;
+  background: #eef1e5;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.saved-item.selected-phrase {
+  border-left: 3px solid #7f8e6e;
+  padding-left: 8px;
+}
+.phrase-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+.phrase-dialog-actions .primary {
+  font-size: 12px;
+}
+.phrase-dialog-error {
+  color: #93452e;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.phrase-confirm-delete {
+  background: #944d37;
+}
 .library-note {
   font-size: 11px;
   color: #8b957f;

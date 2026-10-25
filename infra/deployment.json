@@ -1,0 +1,10 @@
+{
+  "aws_profile": "personal",
+  "aws_account_id": "484147967503",
+  "aws_region": "us-east-1",
+  "domain_name": "banjo.jamesianburns.com",
+  "route53_zone_id": "Z01539701AYLPGD41G904",
+  "certificate_arn": "arn:aws:acm:us-east-1:484147967503:certificate/68e87740-ddd4-46c8-898e-0bccdcf41fec",
+  "site_bucket": "learn-banjo-site-484147967503",
+  "state_bucket": "learn-banjo-terraform-484147967503"
+}

@@ -1,4 +1,82 @@
 {
   "version": 1,
-  "recordings": []
+  "recordings": [
+    {
+      "id": "g-alternating-thumb-roll",
+      "title": "Alternating thumb roll in G",
+      "kind": "roll",
+      "key": "G",
+      "duration": 1.987583,
+      "bpm": "",
+      "src": "audio/g-alternating-thumb-roll-0f1c8995b23a0a04.mp3",
+      "roll": "Alternating thumb roll",
+      "chord": ""
+    },
+    {
+      "id": "g-backwards-roll",
+      "title": "Backward roll in G",
+      "kind": "roll",
+      "key": "G",
+      "duration": 2.047521,
+      "bpm": "",
+      "src": "audio/g-backwards-roll-18b36dd4ec1cf401.mp3",
+      "roll": "Backward roll",
+      "chord": ""
+    },
+    {
+      "id": "g-foggy-mountain-alternate-roll",
+      "title": "Foggy Mountain alternate roll in G",
+      "kind": "roll",
+      "key": "G",
+      "duration": 3.93975,
+      "bpm": "",
+      "src": "audio/g-foggy-mountain-alternate-roll-69c161d22096ae78.mp3",
+      "roll": "Foggy Mountain alternate roll",
+      "chord": ""
+    },
+    {
+      "id": "g-foggy-mountain-roll",
+      "title": "Foggy Mountain roll in G",
+      "kind": "roll",
+      "key": "G",
+      "duration": 1.939146,
+      "bpm": "",
+      "src": "audio/g-foggy-mountain-roll-8a7e9055eec6bc1a.mp3",
+      "roll": "Foggy Mountain roll",
+      "chord": ""
+    },
+    {
+      "id": "g-forward-reverse-roll",
+      "title": "Forward-backward roll in G",
+      "kind": "roll",
+      "key": "G",
+      "duration": 1.927583,
+      "bpm": "",
+      "src": "audio/g-forward-reverse-roll-001ce42d6b31f346.mp3",
+      "roll": "Forward-backward roll",
+      "chord": ""
+    },
+    {
+      "id": "g-forward-roll",
+      "title": "Forward roll in G",
+      "kind": "roll",
+      "key": "G",
+      "duration": 2.014979,
+      "bpm": "",
+      "src": "audio/g-forward-roll-ac609a595b27f0fb.mp3",
+      "roll": "Forward roll",
+      "chord": ""
+    },
+    {
+      "id": "g-square-roll",
+      "title": "Square roll in G",
+      "kind": "roll",
+      "key": "G",
+      "duration": 2.996958,
+      "bpm": "",
+      "src": "audio/g-square-roll-699190aa0074bdd3.mp3",
+      "roll": "Square roll",
+      "chord": ""
+    }
+  ]
 }
