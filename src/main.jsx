@@ -673,6 +673,14 @@ function App() {
             <CircleHelp size={18} />A quick field guide
             <ArrowRight size={15} />
           </button>
+          <a
+            className="coffee-pill"
+            href="https://buymeacoffee.com/jamesianburns"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span aria-hidden="true">☕</span> Buy me a coffee
+          </a>
           <div className="sidebar-foot">
             <span className="green-dot" />
             Made for the love of picking

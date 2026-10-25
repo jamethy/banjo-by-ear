@@ -2,6 +2,8 @@
 
 A banjo practice room for learning by ear. Paste a YouTube video link, select a phrase, slow it down, and leave a pause between repeats to play it yourself.
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy_me_a_coffee-Support_Slowfolk-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/jamesianburns)
+
 ## Run locally
 
 Requires Node.js 20.19+ or 22.12+.
